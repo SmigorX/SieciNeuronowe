@@ -52,15 +52,14 @@ print("X_test:", X_test_scaled.shape)
 print("y_test:", y_test.shape)
 
 # 7. Define hyperparameter permutations
-optimizer_learning_rate = [0.001, 0.002, 0.003, 0.004]
-fitting_batch = [7, 10, 15, 20, 25]
-stop_patience = [10, 15, 20]
-reduce_learning_factor = [0.48, 0.49, 0.50, 0.51, 0.52]
-reduce_learning_patience = [5, 10, 15, 20]
+optimizer_learning_rate = [0.001, 0.002]
+fitting_batch = [15, 20, 30]
+stop_patience = [15, 20, 25]
+reduce_learning_factor = [0.47, 0.48]
+reduce_learning_patience = [15, 25, 30]
 reduce_learning_minimal = 1e-6
 fitting_epochs = 500
-# MODIFICATION 1: Define sizes for the hidden layer
-net_size = [10, 16, 24, 32]
+net_size = [24, 32, 40]
 
 # 8. Create a list of all permutations
 permutations = list(
@@ -70,20 +69,17 @@ permutations = list(
         reduce_learning_factor,
         reduce_learning_patience,
         fitting_batch,
-        # MODIFICATION 2: Include net_size in the permutations
         net_size,
     )
 )
 
-# 9. Initialize variables to store the best results and all results
-best_test_accuracy = 0
+# 9. Initialize variables to store best model
+best_val_accuracy = 0
 best_params = {}
 best_results = {}
-
 all_results = []
 
 # 10. Iterate through all permutations
-# MODIFICATION 3: Unpack the new net_size variable
 for lr, patience, factor, reduce_patience, batch_size, n_size in permutations:
     print(
         f"\nTraining with lr={lr}, patience={patience}, factor={factor}, "
@@ -93,7 +89,6 @@ for lr, patience, factor, reduce_patience, batch_size, n_size in permutations:
     # 11. Define the model
     model = keras.Sequential(
         [
-            # MODIFICATION 4: Use n_size instead of the fixed '16'
             layers.Dense(
                 n_size, activation="relu", input_shape=(X_train_scaled.shape[1],)
             ),
@@ -101,11 +96,11 @@ for lr, patience, factor, reduce_patience, batch_size, n_size in permutations:
         ]
     )
 
-    # 12. Compile the model
+    # 12. Compile
     optimizer = Adam(learning_rate=lr)
     model.compile(optimizer=optimizer, loss="binary_crossentropy", metrics=["accuracy"])
 
-    # 13. Define callbacks
+    # 13. Callbacks
     early_stopping = EarlyStopping(
         monitor="val_accuracy",
         patience=patience,
@@ -133,7 +128,7 @@ for lr, patience, factor, reduce_patience, batch_size, n_size in permutations:
         verbose=0,
     )
 
-    # 15. Evaluate the model
+    # 15. Evaluate using test set (NOT used for model selection)
     test_loss, test_accuracy = model.evaluate(X_test_scaled, y_test, verbose=0)
     train_accuracy = history.history["accuracy"][-1]
     val_accuracy = history.history["val_accuracy"][-1]
@@ -142,7 +137,7 @@ for lr, patience, factor, reduce_patience, batch_size, n_size in permutations:
     params = {
         "batch_size": batch_size,
         "learning_rate": lr,
-        "net_size": n_size,  # MODIFICATION 5: Log the net size
+        "net_size": n_size,
         "epochs": len(history.history["accuracy"]),
         "optimizer": "Adam",
         "loss_function": "binary_crossentropy",
@@ -160,7 +155,7 @@ for lr, patience, factor, reduce_patience, batch_size, n_size in permutations:
 
     log_results_to_file("learning_results.log", params, results)
 
-    # Store results for plotting
+    # Store results for plots — NOW USING VAL ACCURACY
     all_results.append(
         {
             "learning_rate": lr,
@@ -168,33 +163,30 @@ for lr, patience, factor, reduce_patience, batch_size, n_size in permutations:
             "factor": factor,
             "reduce_patience": reduce_patience,
             "batch_size": batch_size,
-            "net_size": n_size,  # MODIFICATION 6: Store net size for plotting
-            "test_accuracy": test_accuracy,
+            "net_size": n_size,
+            "val_accuracy": val_accuracy,
         }
     )
 
-    # 17. Update best results
-    if test_accuracy > best_test_accuracy:
-        best_test_accuracy = test_accuracy
+    # 17. Select best model using VALIDATION accuracy
+    if val_accuracy > best_val_accuracy:
+        best_val_accuracy = val_accuracy
         best_params = params
         best_results = results
 
-    # 18. Print current results
-    print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
+    print(f"Validation Accuracy: {val_accuracy * 100:.2f}%")
 
 # 19. Print the best results
-print("\nBest Results:")
-print("Parameters:")
+print("\nBest Results (selected by validation accuracy):")
 for key, value in best_params.items():
     print(f"{key}: {value}")
 print("\nResults:")
 for key, value in best_results.items():
     print(f"{key}: {value:.4f}")
 
-# 20. Plot training and validation accuracy for the best model
+# 20. Retrain best model for plotting
 best_model = keras.Sequential(
     [
-        # MODIFICATION 7: Use the best net size found
         layers.Dense(
             best_params["net_size"],
             activation="relu",
@@ -243,70 +235,63 @@ plt.ylabel("Accuracy")
 plt.legend()
 plt.show()
 
-# 21. Plot parameter influence with averaged values
+# 21. Plot parameter influence using VALIDATION accuracy
 results_df = pd.DataFrame(all_results)
 
-# Plot for each parameter
-plt.figure(figsize=(18, 12))  # Adjusted figure size for the extra plot
+plt.figure(figsize=(18, 12))
 
 # Learning Rate
 plt.subplot(2, 3, 1)
-avg_lr = results_df.groupby("learning_rate")["test_accuracy"].mean()
+avg_lr = results_df.groupby("learning_rate")["val_accuracy"].mean()
 plt.plot(avg_lr.index, avg_lr.values, marker="o")
-plt.title("Learning Rate vs Avg Test Accuracy")
+plt.title("Learning Rate vs Avg Validation Accuracy")
 plt.xlabel("Learning Rate")
-plt.ylabel("Avg Test Accuracy")
-plt.xticks(optimizer_learning_rate)
+plt.ylabel("Avg Validation Accuracy")
 plt.grid(True)
 
 # Batch Size
 plt.subplot(2, 3, 2)
-avg_bs = results_df.groupby("batch_size")["test_accuracy"].mean()
+avg_bs = results_df.groupby("batch_size")["val_accuracy"].mean()
 plt.plot(avg_bs.index, avg_bs.values, marker="o")
-plt.title("Batch Size vs Avg Test Accuracy")
+plt.title("Batch Size vs Avg Validation Accuracy")
 plt.xlabel("Batch Size")
-plt.ylabel("Avg Test Accuracy")
-plt.xticks(fitting_batch)
+plt.ylabel("Avg Validation Accuracy")
 plt.grid(True)
 
 # Early Stopping Patience
 plt.subplot(2, 3, 3)
-avg_patience = results_df.groupby("patience")["test_accuracy"].mean()
+avg_patience = results_df.groupby("patience")["val_accuracy"].mean()
 plt.plot(avg_patience.index, avg_patience.values, marker="o")
-plt.title("Early Stopping Patience vs Avg Test Accuracy")
+plt.title("Early Stopping Patience vs Avg Validation Accuracy")
 plt.xlabel("Early Stopping Patience")
-plt.ylabel("Avg Test Accuracy")
-plt.xticks(stop_patience)
+plt.ylabel("Avg Validation Accuracy")
 plt.grid(True)
 
 # Reduce LR Factor
 plt.subplot(2, 3, 4)
-avg_factor = results_df.groupby("factor")["test_accuracy"].mean()
+avg_factor = results_df.groupby("factor")["val_accuracy"].mean()
 plt.plot(avg_factor.index, avg_factor.values, marker="o")
-plt.title("Reduce LR Factor vs Avg Test Accuracy")
+plt.title("Reduce LR Factor vs Avg Validation Accuracy")
 plt.xlabel("Reduce LR Factor")
-plt.ylabel("Avg Test Accuracy")
-plt.xticks(reduce_learning_factor)
+plt.ylabel("Avg Validation Accuracy")
 plt.grid(True)
 
 # Reduce LR Patience
 plt.subplot(2, 3, 5)
-avg_reduce_patience = results_df.groupby("reduce_patience")["test_accuracy"].mean()
+avg_reduce_patience = results_df.groupby("reduce_patience")["val_accuracy"].mean()
 plt.plot(avg_reduce_patience.index, avg_reduce_patience.values, marker="o")
-plt.title("Reduce LR Patience vs Avg Test Accuracy")
+plt.title("Reduce LR Patience vs Avg Validation Accuracy")
 plt.xlabel("Reduce LR Patience")
-plt.ylabel("Avg Test Accuracy")
-plt.xticks(reduce_learning_patience)
+plt.ylabel("Avg Validation Accuracy")
 plt.grid(True)
 
-# MODIFICATION 8: Plot for Net Size
+# Net Size
 plt.subplot(2, 3, 6)
-avg_net_size = results_df.groupby("net_size")["test_accuracy"].mean()
+avg_net_size = results_df.groupby("net_size")["val_accuracy"].mean()
 plt.plot(avg_net_size.index, avg_net_size.values, marker="o")
-plt.title("Net Size vs Avg Test Accuracy")
+plt.title("Net Size vs Avg Validation Accuracy")
 plt.xlabel("Net Size (Neurons)")
-plt.ylabel("Avg Test Accuracy")
-plt.xticks(net_size)
+plt.ylabel("Avg Validation Accuracy")
 plt.grid(True)
 
 plt.tight_layout()
