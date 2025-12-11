@@ -52,13 +52,15 @@ print("X_test:", X_test_scaled.shape)
 print("y_test:", y_test.shape)
 
 # 7. Define hyperparameter permutations
-optimizer_learning_rate = [0.003]
-fitting_batch = [10, 15, 20, 25, 30]
-stop_patience = [20, 25]
-reduce_learning_factor = [0.50, 0.51, 0.52, 0.53]
-reduce_learning_patience = [10, 15, 20]
+optimizer_learning_rate = [0.001, 0.002, 0.003, 0.004]
+fitting_batch = [7, 10, 15, 20, 25]
+stop_patience = [10, 15, 20]
+reduce_learning_factor = [0.48, 0.49, 0.50, 0.51, 0.52]
+reduce_learning_patience = [5, 10, 15, 20]
 reduce_learning_minimal = 1e-6
 fitting_epochs = 500
+# MODIFICATION 1: Define sizes for the hidden layer
+net_size = [10, 16, 24, 32]
 
 # 8. Create a list of all permutations
 permutations = list(
@@ -68,6 +70,8 @@ permutations = list(
         reduce_learning_factor,
         reduce_learning_patience,
         fitting_batch,
+        # MODIFICATION 2: Include net_size in the permutations
+        net_size,
     )
 )
 
@@ -79,16 +83,20 @@ best_results = {}
 all_results = []
 
 # 10. Iterate through all permutations
-for lr, patience, factor, reduce_patience, batch_size in permutations:
+# MODIFICATION 3: Unpack the new net_size variable
+for lr, patience, factor, reduce_patience, batch_size, n_size in permutations:
     print(
         f"\nTraining with lr={lr}, patience={patience}, factor={factor}, "
-        f"reduce_patience={reduce_patience}, batch_size={batch_size}"
+        f"reduce_patience={reduce_patience}, batch_size={batch_size}, net_size={n_size}"
     )
 
     # 11. Define the model
     model = keras.Sequential(
         [
-            layers.Dense(16, activation="relu", input_shape=(X_train_scaled.shape[1],)),
+            # MODIFICATION 4: Use n_size instead of the fixed '16'
+            layers.Dense(
+                n_size, activation="relu", input_shape=(X_train_scaled.shape[1],)
+            ),
             layers.Dense(1, activation="sigmoid"),
         ]
     )
@@ -134,6 +142,7 @@ for lr, patience, factor, reduce_patience, batch_size in permutations:
     params = {
         "batch_size": batch_size,
         "learning_rate": lr,
+        "net_size": n_size,  # MODIFICATION 5: Log the net size
         "epochs": len(history.history["accuracy"]),
         "optimizer": "Adam",
         "loss_function": "binary_crossentropy",
@@ -159,6 +168,7 @@ for lr, patience, factor, reduce_patience, batch_size in permutations:
             "factor": factor,
             "reduce_patience": reduce_patience,
             "batch_size": batch_size,
+            "net_size": n_size,  # MODIFICATION 6: Store net size for plotting
             "test_accuracy": test_accuracy,
         }
     )
@@ -184,7 +194,12 @@ for key, value in best_results.items():
 # 20. Plot training and validation accuracy for the best model
 best_model = keras.Sequential(
     [
-        layers.Dense(16, activation="relu", input_shape=(X_train_scaled.shape[1],)),
+        # MODIFICATION 7: Use the best net size found
+        layers.Dense(
+            best_params["net_size"],
+            activation="relu",
+            input_shape=(X_train_scaled.shape[1],),
+        ),
         layers.Dense(1, activation="sigmoid"),
     ]
 )
@@ -232,7 +247,7 @@ plt.show()
 results_df = pd.DataFrame(all_results)
 
 # Plot for each parameter
-plt.figure(figsize=(15, 10))
+plt.figure(figsize=(18, 12))  # Adjusted figure size for the extra plot
 
 # Learning Rate
 plt.subplot(2, 3, 1)
@@ -282,6 +297,16 @@ plt.title("Reduce LR Patience vs Avg Test Accuracy")
 plt.xlabel("Reduce LR Patience")
 plt.ylabel("Avg Test Accuracy")
 plt.xticks(reduce_learning_patience)
+plt.grid(True)
+
+# MODIFICATION 8: Plot for Net Size
+plt.subplot(2, 3, 6)
+avg_net_size = results_df.groupby("net_size")["test_accuracy"].mean()
+plt.plot(avg_net_size.index, avg_net_size.values, marker="o")
+plt.title("Net Size vs Avg Test Accuracy")
+plt.xlabel("Net Size (Neurons)")
+plt.ylabel("Avg Test Accuracy")
+plt.xticks(net_size)
 plt.grid(True)
 
 plt.tight_layout()
